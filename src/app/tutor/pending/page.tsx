@@ -1,23 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/context/auth-context';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { GraduationCap, Clock, CheckCircle, Mail, LogOut } from 'lucide-react';
-import { AuthProvider } from '@/context/auth-context';
-import { useAuth } from '@/context/auth-context';
-import { useRouter } from 'next/navigation';
 import { Toaster } from '@/components/ui/toaster';
 
 const STEPS = [
-  { label: 'Account created', done: true },
-  { label: 'Documents submitted', done: true },
-  { label: 'Admin review', done: false, active: true },
-  { label: 'Profile approved', done: false },
+  { label: 'Account created',   done: true  },
+  { label: 'Documents submitted', done: true  },
+  { label: 'Admin review',       done: false, active: true },
+  { label: 'Profile approved',   done: false },
 ];
 
-function PendingContent() {
+export default function TutorPendingPage() {
   const { logout } = useAuth();
   const router = useRouter();
   const supabase = createClient();
@@ -28,19 +27,21 @@ function PendingContent() {
       if (user?.email) setUserEmail(user.email);
     });
 
-    // Poll every 30s — if they get verified, redirect them automatically
+    // Poll every 30s — handles both approval AND rejection
     const interval = setInterval(async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { data: profile } = await supabase
+      const { data: tp } = await supabase
         .from('tutor_profiles')
-        .select('verified')
+        .select('verification_status')
         .eq('user_id', user.id)
         .single();
 
-      if (profile?.verified) {
+      if (tp?.verification_status === 'approved') {
         router.push('/tutor');
+      } else if (tp?.verification_status === 'rejected') {
+        router.push('/tutor/rejected');
       }
     }, 30_000);
 
@@ -50,6 +51,7 @@ function PendingContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex items-center justify-center p-4">
       <div className="w-full max-w-lg">
+
         {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
@@ -83,14 +85,13 @@ function PendingContent() {
                       ? 'bg-amber-400 text-white animate-pulse'
                       : 'bg-gray-100 text-gray-400'
                   }`}>
-                    {step.done ? (
-                      <CheckCircle className="w-4 h-4" />
-                    ) : (
-                      <span className="text-xs font-bold">{i + 1}</span>
-                    )}
+                    {step.done
+                      ? <CheckCircle className="w-4 h-4" />
+                      : <span className="text-xs font-bold">{i + 1}</span>
+                    }
                   </div>
                   <span className={`text-sm ${
-                    step.done ? 'text-emerald-700 font-medium line-through decoration-emerald-400' :
+                    step.done   ? 'text-emerald-700 font-medium line-through decoration-emerald-400' :
                     step.active ? 'text-amber-700 font-medium' :
                     'text-gray-400'
                   }`}>
@@ -105,11 +106,10 @@ function PendingContent() {
               ))}
             </div>
 
-            {/* What happens next */}
+            {/* Email notice */}
             <div className="bg-emerald-50 border border-emerald-100 rounded-lg p-4 space-y-2">
               <p className="text-sm font-medium text-emerald-800 flex items-center gap-2">
-                <Mail className="w-4 h-4" /> We&apos;ll email you at{' '}
-                <span className="font-bold">{userEmail}</span>
+                <Mail className="w-4 h-4" /> We&apos;ll email you at <span className="font-bold">{userEmail}</span>
               </p>
               <p className="text-xs text-emerald-700">
                 Once approved, you&apos;ll be able to set your availability and start accepting bookings.
@@ -137,18 +137,10 @@ function PendingContent() {
         </Card>
 
         <p className="text-center text-xs text-gray-400 mt-4">
-          This page checks automatically every 30 seconds. You&apos;ll be redirected once approved.
+          This page checks automatically every 30 seconds. You&apos;ll be redirected once a decision is made.
         </p>
       </div>
       <Toaster />
     </div>
-  );
-}
-
-export default function TutorPendingPage() {
-  return (
-    <AuthProvider>
-      <PendingContent />
-    </AuthProvider>
   );
 }

@@ -12,16 +12,15 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { Toaster } from '@/components/ui/toaster';
-import { AuthProvider } from '@/context/auth-context';
 import {
   GraduationCap, Upload, CheckCircle, User,
   BookOpen, FileText, ChevronRight, ChevronLeft, AlertCircle,
 } from 'lucide-react';
 
 const STEPS = [
-  { id: 1, title: 'Personal Info', icon: User, description: 'Basic profile details' },
-  { id: 2, title: 'Teaching Details', icon: BookOpen, description: 'Subjects and experience' },
-  { id: 3, title: 'Verification Docs', icon: FileText, description: 'ID and certificates' },
+  { id: 1, title: 'Personal Info',     icon: User,     description: 'Basic profile details' },
+  { id: 2, title: 'Teaching Details',  icon: BookOpen,  description: 'Subjects and experience' },
+  { id: 3, title: 'Verification Docs', icon: FileText,  description: 'ID and certificates' },
 ];
 
 interface FormData {
@@ -35,7 +34,7 @@ interface FormData {
   qualificationDoc: File | null;
 }
 
-function TutorOnboardingContent() {
+export default function TutorOnboardingPage() {
   const router = useRouter();
   const { toast } = useToast();
   const supabase = createClient();
@@ -63,13 +62,23 @@ function TutorOnboardingContent() {
     return false;
   };
 
-  const uploadFile = async (file: File, userId: string, folder: string) => {
+  /**
+   * Uploads a file to the verification-docs bucket and returns the STORAGE PATH only.
+   * We never call getPublicUrl() — docs are private. Signed URLs are generated
+   * server-side when an admin needs to view them.
+   */
+  const uploadFile = async (file: File, userId: string, folder: string): Promise<string> => {
     const ext = file.name.split('.').pop();
     const path = `${userId}/${folder}/${Date.now()}.${ext}`;
-    const { error } = await supabase.storage.from('verification-docs').upload(path, file);
-    if (error) throw error;
-    const { data } = supabase.storage.from('verification-docs').getPublicUrl(path);
-    return data.publicUrl;
+
+    const { error } = await supabase.storage
+      .from('verification-docs')
+      .upload(path, file, { upsert: false });
+
+    if (error) throw new Error(`Upload failed: ${error.message}`);
+
+    // Return path only — NOT a public URL
+    return path;
   };
 
   const handleSubmit = async () => {
@@ -78,22 +87,22 @@ function TutorOnboardingContent() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
-      const docUrls: string[] = [];
+      const docPaths: string[] = [];
 
       // Upload ID document (required)
       if (form.idDocument) {
-        const url = await uploadFile(form.idDocument, user.id, 'id');
-        docUrls.push(url);
+        const path = await uploadFile(form.idDocument, user.id, 'id');
+        docPaths.push(path);
       }
 
       // Upload qualification doc (optional)
       if (form.qualificationDoc) {
-        const url = await uploadFile(form.qualificationDoc, user.id, 'qualification');
-        docUrls.push(url);
+        const path = await uploadFile(form.qualificationDoc, user.id, 'qualification');
+        docPaths.push(path);
       }
 
-      // Update tutor profile
-      const { error } = await supabase
+      // Update tutor_profiles with submission data
+      const { error: profileError } = await supabase
         .from('tutor_profiles')
         .update({
           bio: form.bio,
@@ -102,19 +111,20 @@ function TutorOnboardingContent() {
           experience_years: parseInt(form.experienceYears) || 0,
           education_background: form.educationBackground,
           teaching_style: form.teachingStyle,
-          verification_documents: docUrls,
+          verification_documents: docPaths,   // paths, not public URLs
+          verification_status: 'pending',     // triggers admin review queue
         })
         .eq('user_id', user.id);
 
-      // Also update profile bio
+      if (profileError) throw profileError;
+
+      // Mirror bio on the main profile table
       await supabase
         .from('profiles')
         .update({ bio: form.bio })
         .eq('user_id', user.id);
 
-      if (error) throw error;
-
-      // Create notification for admins
+      // Notify all admins so they see it in their queue
       const { data: admins } = await supabase
         .from('profiles')
         .select('user_id')
@@ -126,16 +136,21 @@ function TutorOnboardingContent() {
             user_id: a.user_id,
             type: 'verification_request',
             title: 'New Tutor Verification Request',
-            message: `A new tutor has submitted their verification documents for review.`,
+            message: 'A tutor has submitted verification documents and is awaiting review.',
+            action_url: '/admin/verifications',
           }))
         );
       }
 
       toast({ title: 'Submitted!', description: 'Your profile is under review.' });
       router.push('/tutor/pending');
-    } catch (err) {
-      console.error(err);
-      toast({ variant: 'destructive', title: 'Submission failed', description: 'Please try again.' });
+    } catch (err: any) {
+      console.error('[Onboarding] Submit error:', err);
+      toast({
+        variant: 'destructive',
+        title: 'Submission failed',
+        description: err?.message ?? 'Please try again.',
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -146,7 +161,8 @@ function TutorOnboardingContent() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 p-4">
       <div className="max-w-2xl mx-auto">
-        {/* Header */}
+
+        {/* Logo */}
         <div className="flex items-center justify-center gap-2 mb-8 pt-6">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
             <GraduationCap className="w-6 h-6 text-white" />
@@ -156,12 +172,10 @@ function TutorOnboardingContent() {
           </span>
         </div>
 
-        {/* Progress */}
+        {/* Progress bar */}
         <div className="mb-8">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-gray-600">
-              Step {currentStep} of {STEPS.length}
-            </span>
+            <span className="text-sm font-medium text-gray-600">Step {currentStep} of {STEPS.length}</span>
             <span className="text-sm text-gray-500">{Math.round(progress)}% complete</span>
           </div>
           <Progress value={progress} className="h-2" />
@@ -291,10 +305,9 @@ function TutorOnboardingContent() {
                   </div>
                 </div>
 
+                {/* ID Document */}
                 <div className="space-y-2">
-                  <Label>
-                    National ID or Passport <span className="text-red-500">*</span>
-                  </Label>
+                  <Label>National ID or Passport <span className="text-red-500">*</span></Label>
                   <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-emerald-300 transition-colors">
                     <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
                     <p className="text-sm text-gray-500 mb-3">Upload a clear photo of your ID</p>
@@ -305,13 +318,12 @@ function TutorOnboardingContent() {
                       onChange={(e) => update('idDocument', e.target.files?.[0] ?? null)}
                     />
                     {form.idDocument && (
-                      <p className="text-xs text-emerald-600 mt-2">
-                        ✓ {form.idDocument.name}
-                      </p>
+                      <p className="text-xs text-emerald-600 mt-2">✓ {form.idDocument.name}</p>
                     )}
                   </div>
                 </div>
 
+                {/* Qualification Doc */}
                 <div className="space-y-2">
                   <Label>Teaching Certificate or Degree (optional)</Label>
                   <div className="border-2 border-dashed border-gray-200 rounded-lg p-6 text-center hover:border-emerald-300 transition-colors">
@@ -324,9 +336,7 @@ function TutorOnboardingContent() {
                       onChange={(e) => update('qualificationDoc', e.target.files?.[0] ?? null)}
                     />
                     {form.qualificationDoc && (
-                      <p className="text-xs text-emerald-600 mt-2">
-                        ✓ {form.qualificationDoc.name}
-                      </p>
+                      <p className="text-xs text-emerald-600 mt-2">✓ {form.qualificationDoc.name}</p>
                     )}
                   </div>
                 </div>
@@ -361,18 +371,11 @@ function TutorOnboardingContent() {
                 </Button>
               )}
             </div>
+
           </CardContent>
         </Card>
       </div>
       <Toaster />
     </div>
-  );
-}
-
-export default function TutorOnboardingPage() {
-  return (
-    <AuthProvider>
-      <TutorOnboardingContent />
-    </AuthProvider>
   );
 }

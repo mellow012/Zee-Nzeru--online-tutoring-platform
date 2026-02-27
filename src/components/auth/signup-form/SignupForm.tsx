@@ -8,7 +8,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import type { UserRole } from '@/lib/types';
+
+// Public signup only supports student or tutor — admin accounts are created manually
+type PublicRole = 'student' | 'tutor';
 
 interface SignupFormProps {
   onSwitchToLogin: () => void;
@@ -23,7 +25,7 @@ export function SignupForm({ onSwitchToLogin, onClose }: SignupFormProps) {
     fullName: '',
     email: '',
     password: '',
-    role: 'student' as UserRole,
+    role: 'student' as PublicRole,
     phoneNumber: '',
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -36,7 +38,7 @@ export function SignupForm({ onSwitchToLogin, onClose }: SignupFormProps) {
 
     if (result.success) {
       onClose();
-      router.push('/auth/verify'); // send to "check your email" page
+      router.push('/auth/verify');
     } else {
       toast({ variant: 'destructive', title: 'Signup failed', description: result.error });
     }
@@ -79,7 +81,7 @@ export function SignupForm({ onSwitchToLogin, onClose }: SignupFormProps) {
           <Label>I am a</Label>
           <Select
             value={formData.role}
-            onValueChange={(value: UserRole) => setFormData({ ...formData, role: value })}
+            onValueChange={(value: PublicRole) => setFormData({ ...formData, role: value })}
           >
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
