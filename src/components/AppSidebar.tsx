@@ -9,7 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   GraduationCap, LayoutDashboard, Search, Calendar,
   MessageCircle, CreditCard, TrendingUp, BookOpen,
-  Wallet, ClipboardList, LogOut, Menu, X, ChevronRight,
+  Wallet, ClipboardList, LogOut, Menu, X, ChevronRight, User, Settings,
+  CalendarClock, Shield, Users, Flag,
 } from 'lucide-react';
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
@@ -22,18 +23,27 @@ const NAV_ITEMS = {
     { label: 'Progress',    href: '/student/progress', icon: TrendingUp      },
     { label: 'Messages',    href: '/student/messages', icon: MessageCircle   },
     { label: 'Payments',    href: '/student/payments', icon: CreditCard      },
+    { label: 'Profile',     href: '/student/profile',  icon: User            },
   ],
   tutor: [
-    { label: 'Dashboard',  href: '/tutor',           icon: LayoutDashboard },
-    { label: 'Sessions',   href: '/tutor/sessions',  icon: Calendar        },
-    { label: 'Requests',   href: '/tutor/requests',  icon: ClipboardList   },
-    { label: 'Materials',  href: '/tutor/materials', icon: BookOpen        },
-    { label: 'Messages',   href: '/tutor/messages',  icon: MessageCircle   },
-    { label: 'Earnings',   href: '/tutor/earnings',  icon: Wallet          },
+    { label: 'Dashboard',    href: '/tutor',              icon: LayoutDashboard },
+    { label: 'Sessions',     href: '/tutor/sessions',     icon: Calendar        },
+    { label: 'Requests',     href: '/tutor/requests',     icon: ClipboardList   },
+    { label: 'Availability', href: '/tutor/availability', icon: CalendarClock   },
+    { label: 'Materials',    href: '/tutor/materials',    icon: BookOpen        },
+    { label: 'Messages',     href: '/tutor/messages',     icon: MessageCircle   },
+    { label: 'Earnings',     href: '/tutor/earnings',     icon: Wallet          },
+    { label: 'Profile',      href: '/tutor/profile',      icon: User            },
+  ],
+  admin: [
+    { label: 'Overview',      href: '/admin',                icon: LayoutDashboard },
+    { label: 'Verifications', href: '/admin/verifications',  icon: Shield          },
+    { label: 'Users',         href: '/admin/users',          icon: Users           },
+    { label: 'Profile',       href: '/admin/profile',        icon: User            },
   ],
 } as const;
 
-const ROLE_LABEL = { student: 'Student', tutor: 'Tutor' } as const;
+const ROLE_LABEL = { student: 'Student', tutor: 'Tutor', admin: 'Admin' } as const;
 
 function getInitials(name: string) {
   return name
@@ -46,7 +56,7 @@ function getInitials(name: string) {
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export function AppSidebar({ role }: { role: 'student' | 'tutor' }) {
+export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
   const [collapsed,  setCollapsed]  = useState(false);
@@ -55,10 +65,10 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' }) {
   // Close drawer on navigation
   useEffect(() => { setMobileOpen(false); }, [pathname]);
 
-  const items = NAV_ITEMS[role];
+  const items = (NAV_ITEMS as unknown as Record<string, { label: string; href: string; icon: React.ElementType }[]>)[role] ?? [];
 
   const isActive = (href: string) =>
-    href === `/${role}` ? pathname === href : pathname.startsWith(href);
+    href === `/${role}` || href === '/admin' ? pathname === href : pathname.startsWith(href);
 
   // ── Shared inner content ───────────────────────────────────────────────────
   const SidebarInner = ({ forceExpanded = false }: { forceExpanded?: boolean }) => {
@@ -129,13 +139,27 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' }) {
               </button>
             </div>
           ) : (
-            <button
-              onClick={logout}
-              title="Sign out"
-              className="w-9 h-9 rounded-full flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
-            >
-              <LogOut size={16} />
-            </button>
+            <div className="flex flex-col items-center gap-2">
+              <Link
+                href={`/${role}/profile`}
+                title="Profile"
+                className="block"
+              >
+                <Avatar className="w-9 h-9 hover:ring-2 hover:ring-emerald-400 transition-all">
+                  <AvatarImage src={user?.avatarUrl ?? undefined} />
+                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm">
+                    {getInitials(user?.fullName ?? 'U')}
+                  </AvatarFallback>
+                </Avatar>
+              </Link>
+              <button
+                onClick={logout}
+                title="Sign out"
+                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+              >
+                <LogOut size={14} />
+              </button>
+            </div>
           )}
         </div>
       </>

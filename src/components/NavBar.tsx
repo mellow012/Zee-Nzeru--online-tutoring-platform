@@ -116,14 +116,10 @@ export function Navbar() {
             {/* Logged out */}
             {!isLoading && !user && (
               <>
-                <Button variant="ghost" size="sm" asChild className="hidden sm:inline-flex">
+                <Button variant="ghost" size="sm" className="hidden sm:inline-flex" asChild>
                   <Link href="/?auth=login">Login</Link>
                 </Button>
-                <Button
-                  size="sm"
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  asChild
-                >
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" asChild>
                   <Link href="/?auth=signup">Get Started</Link>
                 </Button>
               </>

@@ -190,9 +190,8 @@ export function AdminDashboard({ data }: { data: AdminDashboardData }) {
 
   return (
     <div className="flex h-screen bg-background text-foreground overflow-hidden">
-
-      {/* ── Sidebar ── */}
-      <aside className={`${sidebarOpen ? 'w-64' : 'w-[72px]'} transition-all duration-300 flex flex-col bg-card border-r border-border shrink-0`}>
+      {/* Sidebar is now handled by admin/layout.tsx — keeping wrapper for spacing */}
+      <aside className="hidden">
         <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
             <GraduationCap size={18} className="text-white" />
