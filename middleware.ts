@@ -1,19 +1,11 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
-import type { VerificationStatus } from '@/lib/types';
 
 // ─── Route config ────────────────────────────────────────────────────────────
 
-/** Completely open — no auth required */
 const PUBLIC_ROUTES = ['/auth/verify', '/auth/callback', '/auth/error'];
-
-/** The landing page — public but authenticated users get redirected away */
 const LANDING = '/';
 
-/**
- * Which roles can access each top-level protected route.
- * Any sub-route (e.g. /admin/users) is automatically covered by its parent.
- */
 const PROTECTED_ROUTES: Record<string, string[]> = {
   '/student': ['student', 'admin'],
   '/tutor':   ['tutor',   'admin'],
@@ -25,6 +17,21 @@ const ROLE_HOME: Record<string, string> = {
   tutor:   '/tutor',
   admin:   '/admin',
 };
+
+// Pages unverified tutors ARE allowed to visit
+// (profile is where they complete verification, gate pages explain their status)
+const TUTOR_UNVERIFIED_ALLOWED = [
+  '/tutor/profile',
+  '/tutor/onboarding',
+  '/tutor/pending',
+  '/tutor/rejected',
+];
+
+type VerificationStatus =
+  | 'not_submitted'
+  | 'pending_review'
+  | 'approved'
+  | 'rejected';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,12 @@ function getProtectedBase(pathname: string) {
     Object.keys(PROTECTED_ROUTES).find(
       (base) => pathname === base || pathname.startsWith(base + '/')
     ) ?? null
+  );
+}
+
+function isTutorUnverifiedAllowed(pathname: string) {
+  return TUTOR_UNVERIFIED_ALLOWED.some(
+    (p) => pathname === p || pathname.startsWith(p + '/')
   );
 }
 
@@ -66,12 +79,10 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Always validate server-side — never trust cookies alone
   const { data: { user }, error } = await supabase.auth.getUser();
 
   // ── 1. Public routes ───────────────────────────────────────────────────────
   if (isPublicRoute(pathname)) {
-    // Authenticated user hitting the landing page → send to their dashboard
     if (pathname === LANDING && user && !error) {
       const role = user.user_metadata?.role as string | undefined;
       return NextResponse.redirect(
@@ -95,14 +106,11 @@ export async function middleware(request: NextRequest) {
 
   const role = user.user_metadata?.role as string | undefined;
 
-  // ── 4. Role guard — covers ALL protected routes automatically ──────────────
-  //    Adding a new section (e.g. /teachers) only requires one entry above.
+  // ── 4. Role guard ──────────────────────────────────────────────────────────
   const protectedBase = getProtectedBase(pathname);
-
   if (protectedBase) {
     const allowedRoles = PROTECTED_ROUTES[protectedBase];
     if (!allowedRoles.includes(role ?? '')) {
-      // Wrong role → send them to their own home, not a blank page
       return NextResponse.redirect(
         new URL(ROLE_HOME[role ?? ''] ?? LANDING, request.url)
       );
@@ -110,35 +118,58 @@ export async function middleware(request: NextRequest) {
   }
 
   // ── 5. Tutor verification gate ─────────────────────────────────────────────
-  //    Only runs for /tutor/* paths for actual tutors (admins bypass).
+  // Admins bypass this gate entirely.
   if (pathname.startsWith('/tutor') && role === 'tutor') {
-    const isGatingPage =
-      pathname.startsWith('/tutor/onboarding') ||
-      pathname.startsWith('/tutor/pending')    ||
-      pathname.startsWith('/tutor/rejected');
 
-    if (!isGatingPage) {
-      const { data: tp } = await supabase
-        .from('tutor_profiles')
-        .select('verification_documents, verification_status')
-        .eq('user_id', user.id)
-        .single();
+    // Always allow access to the profile page and gate pages
+    if (isTutorUnverifiedAllowed(pathname)) {
+      return supabaseResponse;
+    }
 
-      const status   = (tp?.verification_status as VerificationStatus) ?? 'not_submitted';
-      const hasDocs  = Array.isArray(tp?.verification_documents) && tp.verification_documents.length > 0;
+    // For everything else, check verification status
+    const { data: tp } = await supabase
+      .from('tutor_profiles')
+      .select('verification_documents, verification_status')
+      .eq('user_id', user.id)
+      .single();
 
-      if (!hasDocs || status === 'not_submitted') {
-        return NextResponse.redirect(new URL('/tutor/onboarding', request.url));
-      }
-      if (status === 'pending') {
+    const status  = (tp?.verification_status ?? 'not_submitted') as VerificationStatus;
+    const hasDocs = Array.isArray(tp?.verification_documents) &&
+                    tp.verification_documents.length > 0;
+
+    // No profile or not submitted → send to profile to complete verification
+    if (!tp || !hasDocs || status === 'not_submitted') {
+      return NextResponse.redirect(new URL('/tutor/profile', request.url));
+    }
+
+    // Submitted but awaiting admin review
+      if (status === 'pending_review') {
         return NextResponse.redirect(new URL('/tutor/pending', request.url));
       }
-      if (status === 'rejected') {
-        return NextResponse.redirect(new URL('/tutor/rejected', request.url));
-      }
-      // 'approved' → falls through, access granted
+
+    // Rejected → back to profile to resubmit
+    if (status === 'rejected') {
+      return NextResponse.redirect(new URL('/tutor/profile', request.url));
     }
+
+    // approved → access granted, fall through
   }
+  // ── 5. Tutor verification gate
+if (pathname.startsWith('/tutor') && role === 'tutor') {
+
+  if (isTutorUnverifiedAllowed(pathname)) {
+    return supabaseResponse;
+  }
+
+  const { data: tp, error: tpError } = await supabase  // ← add error
+    .from('tutor_profiles')
+    .select('verification_documents, verification_status')
+    .eq('user_id', user.id)
+    .single();
+
+  // ← ADD THIS LINE
+  console.log('[Middleware] tutor gate:', { pathname, tp, tpError, userId: user.id });
+}
 
   return supabaseResponse;
 }

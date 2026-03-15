@@ -8,14 +8,14 @@ import {
   useCallback,
   useRef,
 } from 'react';
-import { createClient } from '../lib/supabase/client';
-import type { AuthUser } from '../lib/types';
+import { createClient } from '@/lib/supabase/client';
+import type { AuthUser } from '@/lib/types';
 
 interface AuthContextType {
   user: AuthUser | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  signup: (data: SignupData) => Promise<{ success: boolean; error?: string }>;
+  login: (email: string, password: string) => Promise<{ success: boolean; role?: string; error?: string }>;
+  signup: (data: SignupData) => Promise<{ success: boolean; role?: string; needsConfirmation?: boolean; error?: string }>;
   logout: () => Promise<void>;
 }
 
@@ -29,27 +29,21 @@ interface SignupData {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Singleton client — never recreated, prevents LockManager contention
+// Singleton client — prevents LockManager contention
 const supabase = createClient();
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]           = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const mounted   = useRef(true);
-  // Prevents concurrent syncUser calls — the root cause of the lock timeout
-  const isSyncing = useRef(false);
+  const mounted    = useRef(true);
+  const isSyncing  = useRef(false);
 
-  /**
-   * Fetches the profile row and sets user state.
-   * Accepts the raw auth user object — does NOT call getUser() internally.
-   */
   const syncUser = useCallback(async (authUser: any) => {
     if (!authUser) {
       if (mounted.current) setUser(null);
       return;
     }
 
-    // Skip if a sync is already in flight — this is what prevents the race
     if (isSyncing.current) return;
     isSyncing.current = true;
 
@@ -66,7 +60,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data) { profile = data; break; }
 
         if (error?.code === 'PGRST116') {
-          // Row not found — on 3rd attempt create it as a trigger fallback
           if (attempt === 2) {
             console.warn('[AuthContext] Profile missing — creating fallback');
             const role = (authUser.user_metadata?.role as string) || 'student';
@@ -114,9 +107,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     mounted.current = true;
 
-    // ── Initial session check ──────────────────────────────────────────────
-    // ONE call to getUser() on mount — that's it.
-    // onAuthStateChange below does NOT call getUser() again.
     const initAuth = async () => {
       const timeout = setTimeout(() => {
         if (mounted.current) {
@@ -135,24 +125,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error('[AuthContext] initAuth error:', err);
       } finally {
         clearTimeout(timeout);
-        // setIsLoading(false) only fires here — after syncUser has fully resolved
         if (mounted.current) setIsLoading(false);
       }
     };
 
     initAuth();
 
-    // ── Auth state listener ────────────────────────────────────────────────
-    // Uses session.user directly — never calls getUser() here.
-    // NO setIsLoading(false) in this listener — initAuth owns the loading flag.
-    // Having it here caused a race where isLoading went false before user was set.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         try {
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-            if (session?.user && mounted.current) {
-              await syncUser(session.user);
-            }
+            if (session?.user && mounted.current) await syncUser(session.user);
           }
           if (event === 'SIGNED_OUT') {
             if (mounted.current) setUser(null);
@@ -160,7 +143,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err) {
           console.error('[AuthContext] onAuthStateChange error:', err);
         }
-        // ← intentionally no setIsLoading(false) here
       }
     );
 
@@ -171,21 +153,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [syncUser]);
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) return { success: false, error: error.message };
-    return { success: true };
+
+    // Read role directly from the JWT user_metadata — no extra DB query needed.
+    // This is available immediately after signIn before syncUser resolves.
+    const role = (data.user?.user_metadata?.role as string) ?? 'student';
+    return { success: true, role };
   };
 
   const signup = async (data: SignupData) => {
-    if (!data.email || !data.password || !data.fullName) {
+    if (!data.email || !data.password || !data.fullName)
       return { success: false, error: 'Email, password, and full name are required' };
-    }
-    if (data.password.length < 6) {
+    if (data.password.length < 6)
       return { success: false, error: 'Password must be at least 6 characters' };
-    }
 
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data: authData, error } = await supabase.auth.signUp({
         email:    data.email,
         password: data.password,
         options: {
@@ -198,21 +182,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       });
 
-      if (error) {
-        console.error('[AuthContext] Signup error:', error.message);
-        return { success: false, error: error.message };
-      }
+      if (error) return { success: false, error: error.message };
 
-      return { success: true };
+      // If email confirmation is disabled the session is available immediately
+      const needsConfirmation = !authData.session;
+      return { success: true, role: data.role ?? 'student', needsConfirmation };
     } catch (err) {
-      console.error('[AuthContext] Signup exception:', err);
       return { success: false, error: String(err) };
     }
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
-    window.location.href = '/';
+    // 1. Clear client-side session immediately
+    try { await supabase.auth.signOut(); } catch { /* ignore */ }
+
+    // 2. Clear the server-side SSR cookie so middleware doesn't redirect back
+    try {
+      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+    } catch {
+      console.warn('[AuthContext] logout API unreachable — redirecting anyway');
+    }
+
+    // 3. Hard navigate — clears all React state and re-evaluates middleware
+    window.location.replace('/');
   };
 
   return (

@@ -1,78 +1,88 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 
-export async function GET(request: NextRequest) {
-  try {
-    const { searchParams } = new URL(request.url);
-    const tutorId = searchParams.get('tutorId');
-    const sessionId = searchParams.get('sessionId');
-    const supabase = await createClient();
-
-    if (sessionId) {
-      const { data: review } = await supabase
-        .from('reviews')
-        .select(`*, profiles!reviews_reviewer_id_fkey(full_name, avatar_url)`)
-        .eq('session_id', sessionId)
-        .single();
-      return NextResponse.json({ success: true, review });
-    }
-
-    if (!tutorId) {
-      return NextResponse.json({ success: false, error: 'Tutor ID required' }, { status: 400 });
-    }
-
-    const { data: reviews, error } = await supabase
-      .from('reviews')
-      .select(`
-        *,
-        profiles!reviews_reviewer_id_fkey(full_name, avatar_url),
-        sessions(subject, scheduled_start_time)
-      `)
-      .eq('reviewee_id', tutorId)
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-
-    return NextResponse.json({ success: true, reviews });
-  } catch (error) {
-    console.error('Get reviews error:', error);
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
-  }
-}
+// ── POST /api/reviews ─────────────────────────────────────────────────────────
+// Creates a review for a completed session.
+// Security: only the session's student can review, session must be completed,
+// and only one review is allowed per session per reviewer.
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-    if (authError || !user) return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 });
 
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role, full_name')
-      .eq('user_id', user.id)
-      .single();
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser();
 
-    if (profile?.role !== 'student') {
-      return NextResponse.json({ success: false, error: 'Only students can leave reviews' }, { status: 403 });
+    if (authError || !user) {
+      return NextResponse.json(
+        { success: false, error: 'Unauthorized' },
+        { status: 401 }
+      );
     }
 
     const { sessionId, rating, comment } = await request.json();
 
-    if (!sessionId || !rating || rating < 1 || rating > 5) {
-      return NextResponse.json({ success: false, error: 'Valid session ID and rating (1-5) required' }, { status: 400 });
+    // Validate required fields
+    if (!sessionId) {
+      return NextResponse.json(
+        { success: false, error: 'sessionId is required' },
+        { status: 400 }
+      );
     }
 
-    const { data: session } = await supabase
+    if (typeof rating !== 'number' || rating < 1 || rating > 5) {
+      return NextResponse.json(
+        { success: false, error: 'rating must be an integer between 1 and 5' },
+        { status: 400 }
+      );
+    }
+
+    // Verify session exists and belongs to this student
+    const { data: session, error: sessionError } = await supabase
       .from('sessions')
-      .select('tutor_id, student_id, status')
+      .select('id, tutor_id, student_id, status, subject')
       .eq('id', sessionId)
       .single();
 
-    if (!session) return NextResponse.json({ success: false, error: 'Session not found' }, { status: 404 });
-    if (session.student_id !== user.id) return NextResponse.json({ success: false, error: 'You can only review your own sessions' }, { status: 403 });
-    if (session.status !== 'completed') return NextResponse.json({ success: false, error: 'Can only review completed sessions' }, { status: 400 });
+    if (sessionError || !session) {
+      return NextResponse.json(
+        { success: false, error: 'Session not found' },
+        { status: 404 }
+      );
+    }
 
-    // Your update_tutor_rating() trigger handles avg recalculation automatically
+    if (session.student_id !== user.id) {
+      return NextResponse.json(
+        { success: false, error: 'You can only review your own sessions' },
+        { status: 403 }
+      );
+    }
+
+    if (session.status !== 'completed') {
+      return NextResponse.json(
+        { success: false, error: 'You can only review completed sessions' },
+        { status: 400 }
+      );
+    }
+
+    // Prevent duplicate reviews
+    const { data: existing } = await supabase
+      .from('reviews')
+      .select('id')
+      .eq('session_id', sessionId)
+      .eq('reviewer_id', user.id)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json(
+        { success: false, error: 'You have already reviewed this session' },
+        { status: 409 }
+      );
+    }
+
+    // Insert the review
     const { data: review, error: insertError } = await supabase
       .from('reviews')
       .insert({
@@ -80,29 +90,61 @@ export async function POST(request: NextRequest) {
         reviewer_id: user.id,
         reviewee_id: session.tutor_id,
         rating,
-        comment,
+        comment: comment?.trim() || null,
+        is_public: true,
+        would_recommend: rating >= 4,
       })
       .select()
       .single();
 
     if (insertError) {
-      if (insertError.code === '23505') { // Unique violation
-        return NextResponse.json({ success: false, error: 'Session already reviewed' }, { status: 400 });
-      }
-      throw insertError;
+      console.error('[POST /api/reviews] insert error:', insertError);
+      return NextResponse.json(
+        { success: false, error: 'Failed to submit review' },
+        { status: 500 }
+      );
     }
 
-    await supabase.from('notifications').insert({
-      user_id: session.tutor_id,
-      type: 'review',
-      title: 'New Review',
-      message: `${profile.full_name} left you a ${rating}-star review!`,
-      session_id: sessionId,
-    });
+    // Recalculate tutor's average rating from all public reviews.
+    // NOTE: A database trigger is the ideal place for this; this is a safe fallback.
+    supabase
+      .from('reviews')
+      .select('rating')
+      .eq('reviewee_id', session.tutor_id)
+      .eq('is_public', true)
+      .then(({ data: allRatings }) => {
+        if (!allRatings?.length) return;
+        const avg =
+          allRatings.reduce((sum, r) => sum + r.rating, 0) / allRatings.length;
+        supabase
+          .from('tutor_profiles')
+          .update({ rating: Math.round(avg * 100) / 100 })
+          .eq('user_id', session.tutor_id)
+          .then(({ error }) => {
+            if (error) console.warn('[POST /api/reviews] rating update error:', error.message);
+          });
+      });
 
-    return NextResponse.json({ success: true, review });
-  } catch (error) {
-    console.error('Create review error:', error);
-    return NextResponse.json({ success: false, error: 'Internal server error' }, { status: 500 });
+    // Notify the tutor — non-blocking
+    supabase
+      .from('notifications')
+      .insert({
+        user_id: session.tutor_id,
+        type: 'new_review',
+        title: 'New Review Received',
+        message: `You received a ${rating}-star review for your ${session.subject} session.`,
+        session_id: sessionId,
+      })
+      .then(({ error }) => {
+        if (error) console.warn('[POST /api/reviews] notification error:', error.message);
+      });
+
+    return NextResponse.json({ success: true, review }, { status: 201 });
+  } catch (err) {
+    console.error('[POST /api/reviews] unexpected error:', err);
+    return NextResponse.json(
+      { success: false, error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }

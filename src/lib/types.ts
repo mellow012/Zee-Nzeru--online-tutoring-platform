@@ -1,3 +1,5 @@
+// src/lib/types.ts
+
 export type UserRole = 'student' | 'tutor' | 'admin';
 
 export type SessionStatus =
@@ -8,9 +10,11 @@ export type SessionStatus =
   | 'cancelled'
   | 'no_show';
 
+// Must match the DB enum exactly:
+// public.verification_status = 'not_submitted' | 'pending_review' | 'approved' | 'rejected'
 export type VerificationStatus =
   | 'not_submitted'
-  | 'pending'
+  | 'pending_review'   // ← was incorrectly 'pending' — caused middleware gate to never match
   | 'approved'
   | 'rejected';
 
@@ -49,11 +53,10 @@ export interface TutorProfile {
   completed_sessions: number;
   experience_years: number;
   languages: string[];
-  // Verification fields
-  verification_documents?: string[] | null;   // stored as storage paths (not public URLs)
+  verification_documents?: string[] | null;
   verification_status: VerificationStatus;
   rejection_reason?: string | null;
-  reviewed_by?: string | null;                // admin user_id
+  reviewed_by?: string | null;
   reviewed_at?: string | null;
 }
 
@@ -101,7 +104,6 @@ export interface Session {
   student_notes?: string | null;
   cancellation_reason?: string | null;
   created_at: string;
-  // Joined relations
   tutor?: {
     full_name: string;
     avatar_url?: string | null;
@@ -169,14 +171,13 @@ export interface AdminStats {
   pendingVerifications: number;
 }
 
-// Used in the admin verification queue
 export interface PendingTutor {
   userId: string;
   fullName: string;
   email: string;
   avatarUrl?: string | null;
   submittedAt: string;
-  verificationDocuments: string[]; // storage paths — fetch signed URLs when displaying
+  verificationDocuments: string[];
   bio?: string | null;
   subjects: string[];
   educationBackground?: string | null;
