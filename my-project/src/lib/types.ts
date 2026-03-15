@@ -1,6 +1,22 @@
+// src/lib/types.ts
+
 export type UserRole = 'student' | 'tutor' | 'admin';
 
-export type SessionStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show';
+export type SessionStatus =
+  | 'pending'
+  | 'confirmed'
+  | 'in_progress'
+  | 'completed'
+  | 'cancelled'
+  | 'no_show';
+
+// Must match the DB enum exactly:
+// public.verification_status = 'not_submitted' | 'pending_review' | 'approved' | 'rejected'
+export type VerificationStatus =
+  | 'not_submitted'
+  | 'pending_review'   // ← was incorrectly 'pending' — caused middleware gate to never match
+  | 'approved'
+  | 'rejected';
 
 export interface AuthUser {
   userId: string;
@@ -32,10 +48,25 @@ export interface TutorProfile {
   verified_at?: string | null;
   bio?: string | null;
   education_background?: string | null;
+  teaching_style?: string | null;
   total_sessions: number;
   completed_sessions: number;
   experience_years: number;
   languages: string[];
+  verification_documents?: string[] | null;
+  verification_status: VerificationStatus;
+  rejection_reason?: string | null;
+  reviewed_by?: string | null;
+  reviewed_at?: string | null;
+}
+
+export interface StudentProfile {
+  id: string;
+  user_id: string;
+  preferred_subjects?: string[] | null;
+  learning_goals?: string | null;
+  grade_level?: string | null;
+  created_at: string;
 }
 
 export interface TutorWithProfile {
@@ -73,7 +104,6 @@ export interface Session {
   student_notes?: string | null;
   cancellation_reason?: string | null;
   created_at: string;
-  // Joined relations
   tutor?: {
     full_name: string;
     avatar_url?: string | null;
@@ -139,4 +169,17 @@ export interface AdminStats {
   verifiedTutors: number;
   totalSessions: number;
   pendingVerifications: number;
+}
+
+export interface PendingTutor {
+  userId: string;
+  fullName: string;
+  email: string;
+  avatarUrl?: string | null;
+  submittedAt: string;
+  verificationDocuments: string[];
+  bio?: string | null;
+  subjects: string[];
+  educationBackground?: string | null;
+  experienceYears: number;
 }
