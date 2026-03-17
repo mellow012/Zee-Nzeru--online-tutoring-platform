@@ -5,13 +5,14 @@ import { useRouter } from 'next/navigation';
 import { formatSessionDateTime, formatDuration } from '@/lib/session-time';
 import { format, formatDistanceToNow } from 'date-fns';
 import {
-  Calendar, Clock, Video, Star, X, ChevronRight,
+  Calendar, Clock, Video, Star, X, ChevronRight, CreditCard,
   BookOpen, AlertCircle, CheckCircle2,
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ReviewDialog } from '@/components/dialogs/Review-dialog';
+import { PaymentDialog } from '@/components/dialogs/Payment-dialog';
 import { useToast } from '@/hooks/use-toast';
 import { cancelSessionAction } from '../action';
 import type { SessionWithTutor } from '../action';
@@ -63,7 +64,8 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
   const router = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
-  const [reviewSession, setReviewSession] = useState<SessionWithTutor | null>(null);
+  const [reviewSession,  setReviewSession]  = useState<SessionWithTutor | null>(null);
+  const [paymentSession, setPaymentSession] = useState<Session | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
   const handleFilterChange = (key: string) => {
@@ -142,6 +144,7 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
               const canCancel = ['pending', 'confirmed'].includes(session.status);
               const canReview = session.status === 'completed' && !session.hasReview;
               const canJoin = session.status === 'in_progress';
+              const canPay  = session.status === 'confirmed'; // pay at session start
 
               return (
                 <Card key={session.id} className="shadow-sm border-0">
@@ -193,10 +196,19 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
                               MWK {session.price.toLocaleString()}
                             </span>
                             <div className="flex gap-2">
-                              {canJoin && (
+                              {canPay && (
                                 <Button
                                   size="sm"
                                   className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
+                                  onClick={() => setPaymentSession(toSession(session))}
+                                >
+                                  <CreditCard className="w-3.5 h-3.5" /> Pay & Join
+                                </Button>
+                              )}
+                              {canJoin && (
+                                <Button
+                                  size="sm"
+                                  className="bg-blue-600 hover:bg-blue-700 gap-1.5 h-8 text-xs"
                                   onClick={() => router.push(`/student/sessions/${session.id}`)}
                                 >
                                   <Video className="w-3.5 h-3.5" /> Join
@@ -240,6 +252,12 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
           </div>
         )}
       </div>
+
+      <PaymentDialog
+        session={paymentSession}
+        open={!!paymentSession}
+        onClose={() => setPaymentSession(null)}
+      />
 
       {reviewSession && (
         <ReviewDialog

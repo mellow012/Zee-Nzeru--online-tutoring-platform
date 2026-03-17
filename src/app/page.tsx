@@ -1,31 +1,28 @@
 'use client';
 
-import { useState, useEffect, useCallback, Suspense } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useCallback, Suspense } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Navbar }      from '@/components/NavBar';
 import { LandingPage } from '@/components/LandingPage';
 import { LoginForm }   from '@/components/auth/login-form/LoginForm';
 import { SignupForm }  from '@/components/auth/signup-form/SignupForm';
+import { useEffect } from 'react';
 
 type AuthModal = 'login' | 'signup' | null;
 
-function AuthModalController({
-  onLogin, onSignup,
-}: {
-  onLogin: () => void;
-  onSignup: () => void;
-}) {
+function AuthModalController({ onOpen }: { onOpen: (m: AuthModal) => void }) {
   const searchParams = useSearchParams();
+  const router       = useRouter();
 
   useEffect(() => {
     const auth = searchParams.get('auth');
-    // Only open once on mount — don't re-trigger on every render
-    if (auth === 'login')  onLogin();
-    if (auth === 'signup') onSignup();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // run once on mount only
+    if (auth === 'login' || auth === 'signup') {
+      onOpen(auth);
+      // Clean URL immediately so this doesn't re-trigger
+      router.replace('/', { scroll: false });
+    }
+  }, [searchParams]); // re-run when URL params change
 
   return null;
 }
@@ -33,16 +30,15 @@ function AuthModalController({
 export default function HomePage() {
   const [modal, setModal] = useState<AuthModal>(null);
 
-  // useCallback ensures stable references so AuthModalController doesn't re-run
+  const openModal  = useCallback((m: AuthModal) => setModal(m), []);
   const openLogin  = useCallback(() => setModal('login'),  []);
   const openSignup = useCallback(() => setModal('signup'), []);
   const close      = useCallback(() => setModal(null),     []);
 
   return (
     <>
-    
       <Suspense fallback={null}>
-        <AuthModalController onLogin={openLogin} onSignup={openSignup} />
+        <AuthModalController onOpen={openModal} />
       </Suspense>
 
       <LandingPage onLogin={openLogin} onSignup={openSignup} />

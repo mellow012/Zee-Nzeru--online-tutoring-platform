@@ -4,7 +4,7 @@ import { useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { format, formatDistanceToNow, isPast, isToday, isTomorrow } from 'date-fns';
 import {
-  Calendar, Star, Clock, Video, X,
+  Calendar, Star, Clock, Video, X, CreditCard,
   CheckCircle2, ChevronRight, Sparkles, Users,
   GraduationCap, Wallet,
 } from 'lucide-react';
@@ -230,6 +230,7 @@ export function StudentDashboard({ data }: { data: StudentDashboardData }) {
                   isCancelling={cancellingId === session.id}
                   onCancel={handleCancelSession}
                   onJoin={() => router.push(`/student/sessions/${session.id}`)}
+                  onPay={() => setPaymentSession(toSession(session))}
                 />
               ))}
             </div>
@@ -282,7 +283,6 @@ export function StudentDashboard({ data }: { data: StudentDashboardData }) {
           session={paymentSession}
           open={!!paymentSession}
           onClose={() => setPaymentSession(null)}
-          onPayment={handlePaymentSuccess}
         />
       )}
     </div>
@@ -291,13 +291,14 @@ export function StudentDashboard({ data }: { data: StudentDashboardData }) {
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
-function UpcomingSessionCard({ session, isCancelling, onCancel, onJoin }: {
+function UpcomingSessionCard({ session, isCancelling, onCancel, onJoin, onPay }: {
   session: SessionWithTutor; isCancelling: boolean;
-  onCancel: (id: string) => void; onJoin: () => void;
+  onCancel: (id: string) => void; onJoin: () => void; onPay: () => void;
 }) {
-  const start  = new Date(session.scheduled_start_time);
-  const isLive = session.status === 'in_progress';
-  const canJoin = isLive || (session.status === 'confirmed' && !isPast(start));
+  const start   = new Date(session.scheduled_start_time);
+  const isLive  = session.status === 'in_progress';
+  const canPay  = session.status === 'confirmed';
+  const canJoin = isLive;
 
   return (
     <Card className="shadow-sm border-0 overflow-hidden">
@@ -325,9 +326,14 @@ function UpcomingSessionCard({ session, isCancelling, onCancel, onJoin }: {
               </div>
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {canPay && (
+                <Button size="sm" onClick={onPay} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                  <CreditCard className="w-3.5 h-3.5" /> Pay & Join
+                </Button>
+              )}
               {canJoin && (
-                <Button size="sm" onClick={onJoin} className={`gap-1.5 ${isLive ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}>
-                  <Video className="w-3.5 h-3.5" /> {isLive ? 'Join' : 'Prepare'}
+                <Button size="sm" onClick={onJoin} className="gap-1.5 bg-blue-600 hover:bg-blue-700">
+                  <Video className="w-3.5 h-3.5" /> Join
                 </Button>
               )}
               {['pending', 'confirmed'].includes(session.status) && (
