@@ -68,6 +68,8 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
   const [paymentSession, setPaymentSession] = useState<Session | null>(null);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
 
+  
+
   const handleFilterChange = (key: string) => {
     const params = key === 'all' ? '/student/sessions' : `/student/sessions?status=${key}`;
     router.push(params);
@@ -143,9 +145,12 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
               const cfg = STATUS_CONFIG[session.status] ?? STATUS_CONFIG.pending;
               const canCancel = ['pending', 'confirmed'].includes(session.status);
               const canReview = session.status === 'completed' && !session.hasReview;
-              const canJoin = session.status === 'in_progress';
-              const canPay  = session.status === 'confirmed'; // pay at session start
-
+              const startTime = new Date(session.scheduled_start_time);
+              const now = new Date();
+              // Allow joining 10 minutes before the official start time
+              const isTimeForSession = (startTime.getTime() - now.getTime()) <= 10 * 60 * 1000;
+              const canJoin = (session.status === 'in_progress' || session.status === 'confirmed') && isTimeForSession;
+              const canPay = session.status === 'confirmed' && !isTimeForSession;
               return (
                 <Card key={session.id} className="shadow-sm border-0">
                   <CardContent className="p-0">
@@ -196,22 +201,23 @@ export function SessionsClient({ sessions, activeStatus }: Props) {
                               MWK {session.price.toLocaleString()}
                             </span>
                             <div className="flex gap-2">
+                             {/* Replace your existing canJoin / canPay JSX blocks with this */}
                               {canPay && (
                                 <Button
                                   size="sm"
                                   className="bg-emerald-600 hover:bg-emerald-700 gap-1.5 h-8 text-xs"
                                   onClick={() => setPaymentSession(toSession(session))}
                                 >
-                                  <CreditCard className="w-3.5 h-3.5" /> Pay & Join
+                                  <CreditCard className="w-3.5 h-3.5" /> Pay Now
                                 </Button>
                               )}
                               {canJoin && (
                                 <Button
                                   size="sm"
-                                  className="bg-blue-600 hover:bg-blue-700 gap-1.5 h-8 text-xs"
-                                  onClick={() => router.push(`/student/sessions/${session.id}`)}
+                                  className="bg-blue-600 hover:bg-blue-700 animate-pulse gap-1.5 h-8 text-xs"
+                                  onClick={() => router.push(`/classroom/${session.id}`)}
                                 >
-                                  <Video className="w-3.5 h-3.5" /> Join
+                                  <Video className="w-3.5 h-3.5" /> Join Classroom
                                 </Button>
                               )}
                               {canReview && (

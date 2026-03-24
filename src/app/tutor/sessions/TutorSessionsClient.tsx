@@ -201,14 +201,16 @@ export function TutorSessionsClient({ sessions, activeStatus, activeView }: Prop
                                 MWK {session.price.toLocaleString()}
                               </span>
                               {(isLive || isConfirmed) && (
-                                <Button
-                                  size="sm"
-                                  className={`gap-1.5 h-8 text-xs ${isLive ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}
-                                  onClick={() => router.push(`/tutor/sessions/${session.id}`)}
-                                >
-                                  <Video className="w-3.5 h-3.5" />
-                                  {isLive ? 'Join' : 'Start'}
-                                </Button>
+                                // TutorSessionsClient.tsx snippet
+                              <Button
+                                size="sm"
+                                disabled={!isConfirmed && !isLive} // Status must be confirmed/live
+                                className={`gap-1.5 h-8 text-xs ${isLive ? 'bg-emerald-600' : 'bg-blue-600'}`}
+                                onClick={() => router.push(`/classroom/${session.id}`)}
+                              >
+                                <Video className="w-3.5 h-3.5" />
+                                {isLive ? 'Join Live' : 'Start Session'}
+                              </Button>
                               )}
                               {isConfirmed && (
                                 <Button
