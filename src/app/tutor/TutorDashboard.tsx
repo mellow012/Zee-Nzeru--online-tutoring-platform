@@ -357,7 +357,7 @@ export function TutorDashboard({ data }: { data: TutorDashboardData }) {
                     session={s}
                     onAccept={() => handleAccept(s.id)}
                     onDecline={() => setDecliningSession(s)}
-                    onJoin={() => router.push(`/tutor/sessions/${s.id}`)}
+                    onJoin={() => router.push(`/classroom/${s.id}`)}
                     showActions={s.status === 'pending'}
                   />
                 ))}

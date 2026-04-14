@@ -5,6 +5,9 @@ import { Toaster } from "@/components/ui/toaster";
 import { AuthProvider } from "@/context/auth-context";
 import { ConditionalNavbar } from "@/components/ConditionalNavbar";
 
+// Fix: Prevent Next.js from aggressively caching Supabase DB results across the app
+export const dynamic = 'force-dynamic';
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],

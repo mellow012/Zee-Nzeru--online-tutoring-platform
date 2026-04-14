@@ -229,7 +229,7 @@ export function StudentDashboard({ data }: { data: StudentDashboardData }) {
                   session={session}
                   isCancelling={cancellingId === session.id}
                   onCancel={handleCancelSession}
-                  onJoin={() => router.push(`/student/sessions/${session.id}`)}
+                  onJoin={() => router.push(`/classroom/${session.id}`)}
                   onPay={() => setPaymentSession(toSession(session))}
                 />
               ))}

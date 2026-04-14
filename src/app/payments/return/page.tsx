@@ -34,6 +34,8 @@ function PaymentReturnContent() {
         if (data.success) {
           setState('success');
           setSessionId(data.sessionId);
+          // Automatically redirect into the classroom
+          router.replace(`/classroom/${data.sessionId}`);
         } else {
           setState('failed');
           setMessage(data.message ?? 'Payment verification failed.');
@@ -43,7 +45,7 @@ function PaymentReturnContent() {
         setState('failed');
         setMessage('Could not verify payment. Please contact support.');
       });
-  }, [txRef, status]);
+  }, [txRef, status, router]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-emerald-50 via-white to-teal-50 flex items-center justify-center p-4">
