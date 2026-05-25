@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { getRequiredEnvVar } from '@/lib/env';
 
 /**
  * Supabase Admin client — uses the SERVICE_ROLE key.
@@ -12,15 +13,8 @@ import { createClient } from '@supabase/supabase-js';
  *  - Bypass RLS policies
  */
 export function createAdminClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-  if (!url || !key) {
-    throw new Error(
-      'Missing SUPABASE_SERVICE_ROLE_KEY or NEXT_PUBLIC_SUPABASE_URL. ' +
-      'Add SUPABASE_SERVICE_ROLE_KEY to your .env.local file.'
-    );
-  }
+  const url = getRequiredEnvVar('NEXT_PUBLIC_SUPABASE_URL');
+  const key = getRequiredEnvVar('SUPABASE_SERVICE_ROLE_KEY');
 
   return createClient(url, key, {
     auth: {

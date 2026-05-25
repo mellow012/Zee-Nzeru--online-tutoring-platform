@@ -49,14 +49,16 @@ export function PaymentDialog({ session, open, onClose }: PaymentDialogProps) {
   }, [open]);
 
   useEffect(() => {
+    let interval: number | undefined;
+
     if (step === 'paying_onekhusa' && expiresAt) {
-      const interval = setInterval(() => {
+      interval = window.setInterval(() => {
         const now = Date.now();
         const diff = expiresAt - now;
         
         if (diff <= 0) {
           setTimeLeft('00:00');
-          clearInterval(interval);
+          if (interval) window.clearInterval(interval);
           toast({ variant: 'destructive', title: 'Payment Expired', description: 'The Timed Account Number has expired.' });
           setStep('init');
         } else {
@@ -65,8 +67,11 @@ export function PaymentDialog({ session, open, onClose }: PaymentDialogProps) {
           setTimeLeft(`${m}:${s}`);
         }
       }, 1000);
-      return () => clearInterval(interval);
     }
+
+    return () => {
+      if (interval) window.clearInterval(interval);
+    };
   }, [step, expiresAt, toast]);
 
   if (!session) return null;

@@ -1,6 +1,7 @@
 'use client';
 import { createBrowserClient } from '@supabase/ssr';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { getRequiredEnvVar } from '@/lib/env';
 
 // Module-level singleton — one instance for the entire app lifetime.
 // Without this, calling createClient() inside components or hooks creates
