@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { FileText, FileImage, FileVideo, File, Upload, Download, Link as LinkIcon, ExternalLink, Trash2 } from 'lucide-react';
+import {
+  FileText, FileImage, FileVideo, File, Upload, Download,
+  Link as LinkIcon, ExternalLink, Trash2, Play, Video
+} from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { createClient } from '@/lib/supabase/client';
 import type { Material } from '@/lib/types';
@@ -19,12 +22,20 @@ interface MaterialsPanelProps {
 
 function FileIcon({ type }: { type?: string | null }) {
   switch (type) {
-    case 'pdf': return <FileText className="w-8 h-8 text-red-500" />;
-    case 'image': return <FileImage className="w-8 h-8 text-sky-500" />;
-    case 'video': return <FileVideo className="w-8 h-8 text-indigo-500" />;
-    case 'link': return <LinkIcon className="w-8 h-8 text-emerald-500" />;
-    default: return <File className="w-8 h-8 text-slate-500" />;
+    case 'pdf': return <FileText className="w-8 h-8 text-red-500 shrink-0" />;
+    case 'image': return <FileImage className="w-8 h-8 text-sky-500 shrink-0" />;
+    case 'video': return <FileVideo className="w-8 h-8 text-indigo-500 shrink-0" />;
+    case 'link': return <LinkIcon className="w-8 h-8 text-emerald-500 shrink-0" />;
+    default: return <File className="w-8 h-8 text-slate-500 shrink-0" />;
   }
+}
+
+function formatFileSize(bytes?: number | null) {
+  if (!bytes) return 'Unknown size';
+  if (bytes >= 1024 * 1024) {
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+  return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
 export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
@@ -36,6 +47,7 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
   const [uploadData, setUploadData] = useState({ title: '', description: '', isPublic: false });
   const [isUploading, setIsUploading] = useState(false);
   const [activeCategory, setActiveCategory] = useState<'all' | 'documents' | 'images' | 'videos' | 'links'>('all');
+  const [activeVideo, setActiveVideo] = useState<{ url: string; title: string } | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const { toast } = useToast();
@@ -163,7 +175,7 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
                 : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
             }`}
           >
-            {cat === 'links' ? 'Tutorial Links' : cat}
+            {cat === 'links' ? 'Tutorial Links' : cat === 'videos' ? 'Videos & Recorded Lessons' : cat}
           </button>
         ))}
       </div>
@@ -173,24 +185,37 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
           <div className="text-center py-10 text-slate-400">
             <FileText className="w-12 h-12 mx-auto mb-3 opacity-30 text-slate-500" />
             <p className="text-sm font-medium">No materials in this category</p>
-            <p className="text-xs text-slate-400 mt-1">Upload files or add external tutorial links above.</p>
+            <p className="text-xs text-slate-400 mt-1">Upload documents, local video lessons, or add external links above.</p>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {filteredMaterials.map((m) => {
               const canDelete = m.uploader_id === currentUserId || currentUserRole === 'admin' || currentUserRole === 'superadmin';
+              const isVideo = m.file_type === 'video';
+
               return (
                 <div key={m.id} className="flex items-center gap-3.5 p-3.5 bg-white border border-slate-100 hover:border-slate-200 rounded-xl transition-all duration-200 shadow-sm relative group">
                   <FileIcon type={m.file_type} />
-                  <div className="flex-1 min-w-0 pr-6">
+                  <div className="flex-1 min-w-0 pr-2">
                     <p className="font-medium text-slate-700 text-sm truncate" title={m.title}>{m.title}</p>
                     <p className="text-xs text-slate-400 mt-0.5 truncate">{m.description || 'No description provided.'}</p>
                     <p className="text-[10px] font-medium text-slate-400 mt-1 uppercase tracking-wider">
-                      {m.file_type === 'link' ? 'Tutorial Link' : m.file_size_bytes ? `${(m.file_size_bytes / 1024).toFixed(1)} KB` : 'Unknown size'}
+                      {m.file_type === 'link' ? 'Tutorial Link' : m.file_type === 'video' ? `Video · ${formatFileSize(m.file_size_bytes)}` : formatFileSize(m.file_size_bytes)}
                     </p>
                   </div>
                   
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
+                    {isVideo && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setActiveVideo({ url: m.file_url, title: m.title })}
+                        className="h-8 text-xs bg-indigo-50 text-indigo-700 hover:bg-indigo-100 gap-1 px-2.5 rounded-lg"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-indigo-600 text-indigo-600" /> Watch
+                      </Button>
+                    )}
+
                     <Button variant="ghost" size="icon" className="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all duration-150" asChild>
                       <a href={m.file_url} target="_blank" rel="noopener noreferrer" title={m.file_type === 'link' ? 'Open link' : 'Download file'}>
                         {m.file_type === 'link' ? <ExternalLink className="w-4 h-4 text-emerald-600" /> : <Download className="w-4 h-4 text-indigo-600" />}
@@ -216,6 +241,7 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
         )}
       </CardContent>
 
+      {/* Upload Modal */}
       <Dialog open={uploadOpen} onOpenChange={setUploadOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -228,7 +254,7 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
               onClick={() => setIsLinkToggle(false)}
               className={`py-1.5 rounded-md text-xs font-semibold transition-all duration-150 ${!isLinkToggle ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
             >
-              Upload File
+              Upload File / Video
             </button>
             <button
               onClick={() => setIsLinkToggle(true)}
@@ -242,7 +268,7 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
             <div className="space-y-1.5">
               <Label className="text-xs font-semibold text-slate-600">Title</Label>
               <Input
-                placeholder="e.g. Calculus I Cheat Sheet"
+                placeholder="e.g. Calculus Lesson 1 Video / Lecture Notes"
                 value={uploadData.title}
                 onChange={(e) => setUploadData({ ...uploadData, title: e.target.value })}
                 className="h-9 text-sm"
@@ -272,12 +298,16 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
               </div>
             ) : (
               <div className="space-y-1.5">
-                <Label className="text-xs font-semibold text-slate-600">Select File</Label>
+                <Label className="text-xs font-semibold text-slate-600">Select Local File / Video</Label>
                 <Input 
                   type="file" 
+                  accept="video/*,application/pdf,image/*,.doc,.docx,.ppt,.pptx,.txt"
                   onChange={(e) => setSelectedFile(e.target.files?.[0] ?? null)} 
                   className="text-xs h-9 cursor-pointer file:bg-slate-100 file:border-none file:h-full file:px-3 file:text-slate-700 file:font-semibold hover:file:bg-slate-200"
                 />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Supported formats: Videos (MP4, WEBM, MOV), Documents (PDF, DOCX), and Images.
+                </p>
               </div>
             )}
           </div>
@@ -290,9 +320,30 @@ export function MaterialsPanel({ sessionId, uploaderId }: MaterialsPanelProps) {
               disabled={isUploading}
               size="sm"
             >
-              {isUploading ? 'Adding...' : isLinkToggle ? 'Add Link' : 'Upload File'}
+              {isUploading ? 'Uploading...' : isLinkToggle ? 'Add Link' : 'Upload File / Video'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Video Player Modal */}
+      <Dialog open={!!activeVideo} onOpenChange={() => setActiveVideo(null)}>
+        <DialogContent className="sm:max-w-3xl p-0 overflow-hidden bg-slate-950 border border-slate-800">
+          <DialogHeader className="p-4 bg-slate-900 border-b border-slate-800">
+            <DialogTitle className="flex items-center gap-2 text-white text-base font-semibold">
+              <Video className="w-5 h-5 text-indigo-400" /> {activeVideo?.title}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="p-4 flex items-center justify-center bg-black">
+            {activeVideo && (
+              <video
+                src={activeVideo.url}
+                controls
+                autoPlay
+                className="w-full max-h-[70vh] rounded-lg shadow-2xl"
+              />
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </Card>

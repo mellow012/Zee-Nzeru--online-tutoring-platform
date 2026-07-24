@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/server';
 
 export interface AvailabilitySlot {
   id: string;
-  dayOfWeek: number | null; // 0=Sun … 6=Sat, null if specific date
+  dayOfWeek: number;       // 0=Sun … 6=Sat, null if specific date
   specificDate: string | null;
   startTime: string;       // "HH:MM"
   endTime: string;         // "HH:MM"

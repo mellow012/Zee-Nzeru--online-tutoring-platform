@@ -13,84 +13,117 @@ export async function GET(request: NextRequest) {
     const peerId = searchParams.get('peerId');
     const isAdmin = searchParams.get('admin') === 'true';
 
-    let query = supabase.from('messages').select(`
-      id, sender_id, recipient_id, session_id, body, created_at, is_read
-    `).order('created_at', { ascending: true });
+    // 1. Fetch raw messages cleanly using select('*') to handle DB schema columns safely
+    let query = supabase.from('messages').select('*');
 
     if (isAdmin) {
-      // Admin gets all messages ordered by latest
-      query = supabase.from('messages').select(`
-        id, sender_id, recipient_id, session_id, body, created_at, is_read
-      `).order('created_at', { ascending: false }).limit(200);
+      query = query.order('created_at', { ascending: false }).limit(200);
     } else if (peerId) {
-      // Get conversation between user and peerId
-      query = query.or(`and(sender_id.eq.${user.id},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${user.id})`);
+      query = query
+        .or(`and(sender_id.eq.${user.id},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${user.id})`)
+        .order('created_at', { ascending: true });
     } else {
-      // Just return user's recent messages to build contact list
-      query = query.or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`);
+      query = query
+        .or(`sender_id.eq.${user.id},recipient_id.eq.${user.id}`)
+        .order('created_at', { ascending: true });
     }
 
-    const { data, error } = await query;
-    if (error) throw error;
+    let { data: rawMessages, error: msgError } = await query;
 
-    // Collect all unique user IDs from messages to fetch profiles
-    const userIds = new Set<string>();
-    for (const msg of data ?? []) {
-      if (msg.sender_id) userIds.add(msg.sender_id);
-      if (msg.recipient_id) userIds.add(msg.recipient_id);
-    }
-
-    const profileMap = new Map<string, any>();
-    if (userIds.size > 0) {
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('user_id, full_name, avatar_url')
-        .in('user_id', Array.from(userIds));
-        
-      for (const p of profilesData ?? []) {
-        profileMap.set(p.user_id, { full_name: p.full_name, avatar_url: p.avatar_url });
+    // Fallback query if table uses receiver_id instead of recipient_id
+    if (msgError) {
+      let fallbackQuery = supabase.from('messages').select('*');
+      if (isAdmin) {
+        fallbackQuery = fallbackQuery.order('created_at', { ascending: false }).limit(200);
+      } else if (peerId) {
+        fallbackQuery = fallbackQuery
+          .or(`and(sender_id.eq.${user.id},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${user.id})`)
+          .order('created_at', { ascending: true });
+      } else {
+        fallbackQuery = fallbackQuery
+          .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+          .order('created_at', { ascending: true });
+      }
+      const fallbackRes = await fallbackQuery;
+      if (!fallbackRes.error) {
+        rawMessages = fallbackRes.data;
+        msgError = null;
       }
     }
 
-    // Attach sender and receiver to messages
-    const messagesWithProfiles = (data ?? []).map(msg => ({
-      ...msg,
-      sender: profileMap.get(msg.sender_id) || null,
-      receiver: profileMap.get(msg.recipient_id) || null
+    // Normalize DB columns (handles both recipient_id/receiver_id and body/content)
+    const normalizedRawMessages = (rawMessages ?? []).map((m: any) => ({
+      id: m.id,
+      sender_id: m.sender_id,
+      receiver_id: m.recipient_id || m.receiver_id,
+      content: m.body || m.content || '',
+      created_at: m.created_at,
+      is_read: m.is_read ?? false,
     }));
 
-    let contacts: any[] = [];
-    if (!peerId && !isAdmin) {
-      const { data: sessions } = await supabase
-        .from('sessions')
-        .select('student_id, tutor_id')
-        .or(`student_id.eq.${user.id},tutor_id.eq.${user.id}`);
+    // Collect all user IDs
+    const userIds = new Set<string>();
+    for (const m of normalizedRawMessages) {
+      if (m.sender_id) userIds.add(m.sender_id);
+      if (m.receiver_id) userIds.add(m.receiver_id);
+    }
 
-      const peerIds = new Set<string>();
-      for (const s of sessions ?? []) {
-        if (s.student_id && s.student_id !== user.id) peerIds.add(s.student_id);
-        if (s.tutor_id && s.tutor_id !== user.id) peerIds.add(s.tutor_id);
-      }
+    // Contacts from active sessions
+    const { data: sessions } = await supabase
+      .from('sessions')
+      .select('student_id, tutor_id')
+      .or(`student_id.eq.${user.id},tutor_id.eq.${user.id}`);
 
-      // Also add peers from existing messages (recipient/sender)
-      for (const msg of data ?? []) {
-        const peer = msg.sender_id === user.id ? msg.recipient_id : msg.sender_id;
-        if (peer && peer !== user.id) peerIds.add(peer);
-      }
+    for (const s of sessions ?? []) {
+      if (s.student_id && s.student_id !== user.id) userIds.add(s.student_id);
+      if (s.tutor_id && s.tutor_id !== user.id) userIds.add(s.tutor_id);
+    }
 
-      if (peerIds.size > 0) {
-        const { data: profiles } = await supabase
-          .from('profiles')
-          .select('user_id, full_name, avatar_url')
-          .in('user_id', Array.from(peerIds));
-        contacts = profiles ?? [];
+    // Candidate contacts for starting new chats
+    const { data: allProfiles } = await supabase
+      .from('profiles')
+      .select('user_id, full_name, avatar_url, role')
+      .neq('user_id', user.id)
+      .limit(50);
+
+    for (const p of allProfiles ?? []) {
+      if (p.user_id) userIds.add(p.user_id);
+    }
+
+    // Profile lookup map
+    const profileMap = new Map<string, { full_name: string; avatar_url: string | null; role?: string }>();
+    if (userIds.size > 0) {
+      const { data: profiles } = await supabase
+        .from('profiles')
+        .select('user_id, full_name, avatar_url, role')
+        .in('user_id', Array.from(userIds));
+
+      for (const p of profiles ?? []) {
+        profileMap.set(p.user_id, {
+          full_name: p.full_name || 'User',
+          avatar_url: p.avatar_url || null,
+          role: p.role,
+        });
       }
     }
 
-    return NextResponse.json({ messages: messagesWithProfiles, contacts });
+    const messages = normalizedRawMessages.map((m: any) => ({
+      ...m,
+      sender: profileMap.get(m.sender_id) ?? { full_name: 'User', avatar_url: null },
+      receiver: profileMap.get(m.receiver_id) ?? { full_name: 'User', avatar_url: null },
+    }));
+
+    const contacts = (allProfiles ?? []).map((p: any) => ({
+      user_id: p.user_id,
+      full_name: p.full_name || 'User',
+      avatar_url: p.avatar_url || null,
+      role: p.role,
+    }));
+
+    return NextResponse.json({ success: true, messages, contacts });
   } catch (err: any) {
     console.error('Messages GET error:', err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, error: err.message }, { status: 500 });
   }
 }
 
@@ -103,16 +136,39 @@ export async function POST(request: NextRequest) {
     const { receiverId, content } = await request.json();
     if (!receiverId || !content) return NextResponse.json({ error: 'Bad request' }, { status: 400 });
 
-    const { data, error } = await supabase.from('messages').insert({
+    // Try inserting with recipient_id + body first
+    let insertResult = await supabase.from('messages').insert({
       sender_id: user.id,
       recipient_id: receiverId,
       body: content,
       is_read: false
-    }).select().single();
+    } as any).select().single();
 
-    if (error) throw error;
-    return NextResponse.json({ success: true, message: data });
+    // Fallback if recipient_id or body fails
+    if (insertResult.error) {
+      insertResult = await supabase.from('messages').insert({
+        sender_id: user.id,
+        receiver_id: receiverId,
+        content: content,
+        is_read: false
+      } as any).select().single();
+    }
+
+    if (insertResult.error) throw insertResult.error;
+
+    const raw = insertResult.data;
+    const normalizedMessage = {
+      id: raw.id,
+      sender_id: raw.sender_id,
+      receiver_id: raw.recipient_id || raw.receiver_id,
+      content: raw.body || raw.content,
+      created_at: raw.created_at,
+      is_read: raw.is_read,
+    };
+
+    return NextResponse.json({ success: true, message: normalizedMessage });
   } catch (err: any) {
+    console.error('Messages POST error:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

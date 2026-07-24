@@ -9,8 +9,8 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   GraduationCap, LayoutDashboard, Search, Calendar,
   MessageCircle, CreditCard, TrendingUp, BookOpen,
-  Wallet, ClipboardList, LogOut, Menu, X, ChevronRight, User, Settings,
-  CalendarClock, Shield, Users, Flag, ClipboardCheck, Activity, Bell
+  Wallet, ClipboardList, LogOut, Menu, X, ChevronRight, User,
+  CalendarClock, Shield, Users, Activity, Bell, ClipboardCheck
 } from 'lucide-react';
 
 // ─── Nav config ───────────────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ function getInitials(name: string) {
 export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
   const { user, logout } = useAuth();
   const pathname = usePathname();
-  const [collapsed,  setCollapsed]  = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   // Close drawer on navigation
@@ -78,9 +78,9 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
     const expanded = forceExpanded || !collapsed;
     return (
       <>
-        {/* Brand — identical to admin */}
+        {/* Brand */}
         <div className="flex items-center gap-3 px-4 py-5 border-b border-border">
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shrink-0 shadow-sm">
             <GraduationCap size={18} className="text-white" />
           </div>
           {expanded && (
@@ -88,14 +88,14 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
               <span className="text-lg font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent block leading-tight">
                 Zee Nzeru
               </span>
-              <span className="text-[10px] text-emerald-600 font-semibold tracking-widest uppercase">
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold tracking-widest uppercase">
                 {ROLE_LABEL[role]}
               </span>
             </div>
           )}
         </div>
 
-        {/* Nav — identical structure to admin */}
+        {/* Navigation list */}
         <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto overflow-x-hidden">
           {items.map(({ label, href, icon: Icon }) => {
             const active = isActive(href);
@@ -106,7 +106,7 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
                 title={!expanded ? label : undefined}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-sm font-medium
                   ${active
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-900 font-semibold'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                   }
                   ${!expanded ? 'justify-center' : ''}
@@ -119,35 +119,39 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
           })}
         </nav>
 
-        {/* User footer — identical to admin */}
-        <div className={`p-4 border-t border-border ${!expanded ? 'flex justify-center' : ''}`}>
+        {/* User footer with clear Sign Out button */}
+        <div className="p-3 border-t border-border bg-card">
           {expanded ? (
-            <div className="flex items-center gap-3">
-              <Avatar className="w-9 h-9 shrink-0">
-                <AvatarImage src={user?.avatarUrl ?? undefined} />
-                <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm">
-                  {getInitials(user?.fullName ?? 'U')}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{user?.fullName}</p>
-                <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-3 px-1 py-0.5">
+                <Avatar className="w-9 h-9 shrink-0">
+                  <AvatarImage src={user?.avatarUrl ?? undefined} />
+                  <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm">
+                    {getInitials(user?.fullName ?? 'U')}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold truncate text-foreground">{user?.fullName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{user?.email}</p>
+                </div>
               </div>
+
               <button
-                onClick={logout}
-                title="Sign out"
-                className="shrink-0 text-muted-foreground hover:text-red-500 transition-colors cursor-pointer"
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  await logout();
+                }}
+                className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-200/60 dark:border-red-900/30 transition-all cursor-pointer shadow-xs"
               >
                 <LogOut size={15} />
+                <span>Sign Out</span>
               </button>
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2">
-              <Link
-                href={`/${role}/profile`}
-                title="Profile"
-                className="block"
-              >
+            <div className="flex flex-col items-center gap-2 py-1">
+              <Link href={`/${role}/profile`} title="Profile" className="block">
                 <Avatar className="w-9 h-9 hover:ring-2 hover:ring-emerald-400 transition-all">
                   <AvatarImage src={user?.avatarUrl ?? undefined} />
                   <AvatarFallback className="bg-gradient-to-br from-emerald-400 to-teal-500 text-white font-bold text-sm">
@@ -156,11 +160,16 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
                 </Avatar>
               </Link>
               <button
-                onClick={logout}
-                title="Sign out"
-                className="w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:text-red-500 hover:bg-red-50 transition-colors"
+                type="button"
+                onClick={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  await logout();
+                }}
+                title="Sign Out"
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 border border-red-100 dark:border-red-900/30 transition-colors cursor-pointer"
               >
-                <LogOut size={14} />
+                <LogOut size={16} />
               </button>
             </div>
           )}
@@ -176,10 +185,10 @@ export function AppSidebar({ role }: { role: 'student' | 'tutor' | 'admin' }) {
         className={`hidden md:flex flex-col bg-card border-r border-border shrink-0 transition-all duration-300 relative
           ${collapsed ? 'w-[72px]' : 'w-64'}`}
       >
-        {/* Collapse toggle — same as admin's menu button */}
+        {/* Collapse toggle */}
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="absolute -right-3 top-[72px] z-10 w-6 h-6 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm transition-colors"
+          className="absolute -right-3 top-[72px] z-10 w-6 h-6 rounded-full bg-card border border-border flex items-center justify-center text-muted-foreground hover:text-foreground shadow-sm transition-colors cursor-pointer"
         >
           <ChevronRight
             size={12}

@@ -63,7 +63,7 @@ export interface StudentDashboardData {
 /** Maps flat tutor_profiles + profiles rows into TutorCard */
 function toTutorCard(
   tp: Record<string, any>,
-  profileMap: Map<string, { full_name: string; avatar_url: string | null }>,
+  profileMap: Map<string, { full_name: string; avatar_url: string | null; bio?: string | null }>,
   latestReviewMap?: Map<string, { rating: number; comment: string | null; reviewer_name: string }>
 ): TutorCard {
   const p = profileMap.get(tp.user_id);
@@ -78,7 +78,7 @@ function toTutorCard(
     totalSessions: tp.total_sessions ?? 0,
     experienceYears: tp.experience_years ?? 0,
     verified: tp.verified ?? false,
-    bio: null, // bio lives on profiles table, not tutor_profiles
+    bio: p?.bio ?? tp.bio ?? null,
     teachingStyle: tp.teaching_style ?? null,
     languages: tp.languages ?? ['English'],
     latestReview: latestReviewMap?.get(tp.user_id) ?? null,

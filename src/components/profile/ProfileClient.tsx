@@ -59,7 +59,7 @@ function getInitials(name: string) {
 function VerificationBanner({ status, reason }: { status: string; reason?: string | null }) {
   if (status === 'approved') return null;
 
-  const statusConfig = {
+  const config = {
     not_submitted: {
       icon: AlertCircle,
       bg:   'bg-amber-50 border-amber-200',
@@ -81,8 +81,7 @@ function VerificationBanner({ status, reason }: { status: string; reason?: strin
       icon_color: 'text-red-600',
       msg:  reason ?? 'Your application was not approved. Please update your details and resubmit.',
     },
-  } as const;
-  const config = statusConfig[status as keyof typeof statusConfig];
+  }[status as keyof typeof config];
 
   if (!config) return null;
   const Icon = config.icon;

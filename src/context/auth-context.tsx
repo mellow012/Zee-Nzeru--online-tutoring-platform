@@ -1,4 +1,4 @@
-  'use client';
+'use client';
 
 import {
   createContext,
@@ -8,14 +8,8 @@ import {
   useCallback,
   useRef,
 } from 'react';
-import type {
-  User,
-  AuthChangeEvent,
-  Session,
-  PostgrestSingleResponse,
-} from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
-import type { AuthUser, Profile } from '@/lib/types';
+import type { AuthUser } from '@/lib/types';
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -44,7 +38,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const mounted    = useRef(true);
   const isSyncing  = useRef(false);
 
-  const syncUser = useCallback(async (authUser: User | null) => {
+  const syncUser = useCallback(async (authUser: any) => {
     if (!authUser) {
       if (mounted.current) setUser(null);
       return;
@@ -54,23 +48,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     isSyncing.current = true;
 
     try {
-      let profile: Pick<Profile, 'role' | 'full_name' | 'avatar_url'> | null = null;
+      let profile: { role: string; full_name: string; avatar_url: string | null } | null = null;
 
       for (let attempt = 0; attempt < 4; attempt++) {
-        // Avoid overly-complex generic instantiation for Supabase client here
-        // by using an explicit runtime cast after the query.
         const { data, error } = await supabase
           .from('profiles')
           .select('role, full_name, avatar_url')
           .eq('user_id', authUser.id)
-          .single() as PostgrestSingleResponse<
-          Pick<Profile, 'role' | 'full_name' | 'avatar_url'>
-        >;
+          .single();
 
-        if (data) {
-          profile = data;
-          break;
-        }
+        if (data) { profile = data; break; }
 
         if (error?.code === 'PGRST116') {
           if (attempt === 2) {
@@ -145,7 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event: AuthChangeEvent, session: Session | null) => {
+      async (event, session) => {
         try {
           if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
             if (session?.user && mounted.current) await syncUser(session.user);
@@ -206,18 +193,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    // 1. Clear client-side session immediately
-    try { await supabase.auth.signOut(); } catch { /* ignore */ }
-
-    // 2. Clear the server-side SSR cookie so middleware doesn't redirect back
+    setUser(null);
     try {
-      await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
-    } catch {
+      await supabase.auth.signOut();
+    } catch (err) {
+      console.warn('[AuthContext] Supabase signOut warning:', err);
+    }
+
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (err) {
       console.warn('[AuthContext] logout API unreachable — redirecting anyway');
     }
 
-    // 3. Hard navigate — clears all React state and re-evaluates middleware
-    window.location.replace('/');
+    if (typeof window !== 'undefined') {
+      window.location.href = '/';
+    }
   };
 
   return (

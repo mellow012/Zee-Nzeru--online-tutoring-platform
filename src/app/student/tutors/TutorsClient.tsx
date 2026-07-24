@@ -23,7 +23,7 @@ function getInitials(name: string) {
   return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
 }
 
-function TutorSearchCard({ tutor, onBook, onMessage }: { tutor: TutorCard; onBook: (t: TutorCard) => void; onMessage: (t: TutorCard) => void }) {
+function TutorSearchCard({ tutor, onBook }: { tutor: TutorCard; onBook: (t: TutorCard) => void }) {
   return (
     <Card className="shadow-sm border-0 hover:shadow-md transition-shadow duration-200 flex flex-col">
       <CardContent className="p-5 flex flex-col flex-1 gap-3">
@@ -99,45 +99,24 @@ function TutorSearchCard({ tutor, onBook, onMessage }: { tutor: TutorCard; onBoo
             <span className="text-base font-bold text-emerald-600">MWK {tutor.hourlyRate.toLocaleString()}</span>
             <span className="text-xs text-muted-foreground"> /hr</span>
           </div>
-          <div className="flex gap-2">
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-emerald-200 text-emerald-700 hover:bg-emerald-50 h-8 text-xs gap-1"
-              onClick={() => onMessage(tutor)}
-            >
-              Message
-            </Button>
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs" onClick={() => onBook(tutor)}>
-              Book Now
-            </Button>
-          </div>
+          <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 h-8 text-xs" onClick={() => onBook(tutor)}>
+            Book Now
+          </Button>
         </div>
       </CardContent>
     </Card>
   );
 }
 
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-  PaginationLink,
-  PaginationNext,
-  PaginationPrevious,
-} from "@/components/ui/pagination";
-
 interface Props {
   initialTutors: TutorCard[];
   total: number;
   initialQuery: string;
   initialSubject: string;
-  initialPage: number;
-  allSubjects: string[];
+  allSubjects: string[];  // all subjects from approved tutors in DB
 }
 
-export function TutorsClient({ initialTutors, total, initialQuery, initialSubject, initialPage, allSubjects }: Props) {
+export function TutorsClient({ initialTutors, total, initialQuery, initialSubject, allSubjects }: Props) {
   const router   = useRouter();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
@@ -145,10 +124,10 @@ export function TutorsClient({ initialTutors, total, initialQuery, initialSubjec
   const [mounted,      setMounted]      = useState(false);
   const [query,        setQuery]        = useState(initialQuery);
 
+  // Merge DB subjects with popular list — popular ones shown first, extras after
   const popularSet  = new Set(POPULAR_SUBJECTS);
   const extraSubjects = allSubjects.filter((s) => !popularSet.has(s));
   const [subject,      setSubject]      = useState(initialSubject);
-  const [page,         setPage]         = useState(initialPage);
   const [bookingTutor, setBookingTutor] = useState<TutorCard | null>(null);
   const [paymentSession, setPaymentSession] = useState<Session | null>(null);
 
@@ -156,33 +135,23 @@ export function TutorsClient({ initialTutors, total, initialQuery, initialSubjec
 
   useEffect(() => { setMounted(true); }, []);
 
-  const PAGE_SIZE = 12;
-  const totalPages = Math.ceil(total / PAGE_SIZE);
-
-  const triggerSearch = (q: string, s: string, p: number) => {
+  const triggerSearch = (q: string, s: string) => {
     if (searchDebounce.current) clearTimeout(searchDebounce.current);
     searchDebounce.current = setTimeout(() => {
       const params = new URLSearchParams();
       if (q) params.set('q', q);
       if (s) params.set('subject', s);
-      if (p > 0) params.set('page', p.toString());
       startTransition(() => {
         router.push(`/student/tutors${params.toString() ? `?${params}` : ''}`);
       });
     }, 400);
   };
 
-  const handleQueryChange = (v: string) => { setQuery(v); setPage(0); triggerSearch(v, subject, 0); };
+  const handleQueryChange = (v: string) => { setQuery(v); triggerSearch(v, subject); };
   const handleSubjectChange = (v: string) => {
     const next = v === 'all' ? '' : v;
     setSubject(next);
-    setPage(0);
-    triggerSearch(query, next, 0);
-  };
-  const handlePageChange = (p: number) => {
-    setPage(p);
-    triggerSearch(query, subject, p);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    triggerSearch(query, next);
   };
 
   const handleBookingSuccess = () => {
@@ -243,7 +212,7 @@ export function TutorsClient({ initialTutors, total, initialQuery, initialSubjec
           )}
         </div>
 
-        {/* Subject chips */}
+        {/* Subject chips — popular first, then any custom tutor subjects */}
         <div className="space-y-2">
           <div className="flex flex-wrap gap-2">
             {POPULAR_SUBJECTS.map((s) => (
@@ -261,6 +230,7 @@ export function TutorsClient({ initialTutors, total, initialQuery, initialSubjec
             ))}
           </div>
 
+          {/* Extra subjects added by tutors that aren't in the popular list */}
           {extraSubjects.length > 0 && (
             <div className="flex flex-wrap gap-2 items-center">
               <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide pr-1">
@@ -323,69 +293,21 @@ export function TutorsClient({ initialTutors, total, initialQuery, initialSubjec
                     : 'Try a different subject or clear your filters'}
                 </p>
               </div>
-              <Button size="sm" variant="outline" onClick={() => { setQuery(''); setSubject(''); setPage(0); router.push('/student/tutors'); }}>
+              <Button size="sm" variant="outline" onClick={() => { setQuery(''); setSubject(''); router.push('/student/tutors'); }}>
                 Clear filters
               </Button>
             </CardContent>
           </Card>
         ) : (
-          <>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {initialTutors.map((tutor) => (
-                <TutorSearchCard 
-                  key={tutor.userId} 
-                  tutor={tutor} 
-                  onBook={setBookingTutor} 
-                  onMessage={(t) => router.push(`/student/messages?peerId=${t.userId}`)}
-                />
-              ))}
-            </div>
-
-            {/* Pagination Controls */}
-            {totalPages > 1 && (
-              <Pagination className="mt-8 justify-center pb-8">
-                <PaginationContent>
-                  <PaginationItem>
-                    <PaginationPrevious 
-                      onClick={() => handlePageChange(Math.max(0, page - 1))}
-                      className={page === 0 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                  
-                  {Array.from({ length: totalPages }).map((_, i) => {
-                    // Show first, last, current, and adjacent pages
-                    if (i === 0 || i === totalPages - 1 || Math.abs(i - page) <= 1) {
-                      return (
-                        <PaginationItem key={i}>
-                          <PaginationLink 
-                            isActive={page === i}
-                            onClick={() => handlePageChange(i)}
-                            className="cursor-pointer"
-                          >
-                            {i + 1}
-                          </PaginationLink>
-                        </PaginationItem>
-                      );
-                    }
-                    if (Math.abs(i - page) === 2) {
-                      return <PaginationItem key={i}><PaginationEllipsis /></PaginationItem>;
-                    }
-                    return null;
-                  })}
-                  
-                  <PaginationItem>
-                    <PaginationNext 
-                      onClick={() => handlePageChange(Math.min(totalPages - 1, page + 1))}
-                      className={page >= totalPages - 1 ? 'pointer-events-none opacity-50' : 'cursor-pointer'}
-                    />
-                  </PaginationItem>
-                </PaginationContent>
-              </Pagination>
-            )}
-          </>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {initialTutors.map((tutor) => (
+              <TutorSearchCard key={tutor.userId} tutor={tutor} onBook={setBookingTutor} />
+            ))}
+          </div>
         )}
       </div>
 
+      {/* Dialogs */}
       <BookingDialog
         tutor={bookingTutor}
         open={!!bookingTutor}

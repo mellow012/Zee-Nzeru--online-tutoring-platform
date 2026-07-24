@@ -13,12 +13,7 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-async function createTestUser(
-  email: string,
-  password: string,
-  fullName: string,
-  role: 'student' | 'tutor'
-) {
+async function createTestUser(email, password, fullName, role) {
   console.log(`Creating ${role}: ${email}...`);
   const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
     email,

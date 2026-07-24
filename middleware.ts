@@ -1,6 +1,5 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
-import type { Profile, UserRole } from '@/lib/types';
 
 // ─── Route config ────────────────────────────────────────────────────────────
 
@@ -82,22 +81,12 @@ export async function middleware(request: NextRequest) {
 
   const { data: { user }, error } = await supabase.auth.getUser();
 
-  let role: UserRole = 'student';
-  if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('role')
-      .eq('user_id', user.id)
-      .single();
-
-    role = (profile?.role ?? user.user_metadata?.role ?? 'student') as UserRole;
-  }
-
   // ── 1. Public routes ───────────────────────────────────────────────────────
   if (isPublicRoute(pathname)) {
     if (pathname === LANDING && user && !error) {
+      const role = user.user_metadata?.role as string | undefined;
       return NextResponse.redirect(
-        new URL(ROLE_HOME[role] ?? '/student', request.url)
+        new URL(ROLE_HOME[role ?? ''] ?? '/student', request.url)
       );
     }
     return supabaseResponse;
@@ -114,6 +103,8 @@ export async function middleware(request: NextRequest) {
   if (!user.email_confirmed_at) {
     return NextResponse.redirect(new URL('/auth/verify', request.url));
   }
+
+  const role = user.user_metadata?.role as string | undefined;
 
   // ── 4. Role guard ──────────────────────────────────────────────────────────
   const protectedBase = getProtectedBase(pathname);
